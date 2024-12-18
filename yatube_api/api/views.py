@@ -1,12 +1,12 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import filters, serializers, viewsets
+from rest_framework import filters, generics, viewsets
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import IsAuthenticated
 
 from .permissions import IsOwnerOrReadOnly
 from .serializers import (CommentSerializer, FollowSerializer, GroupSerializer,
                           PostSerializer)
-from posts.models import Follow, Group, Post
+from posts.models import Group, Post, User
 
 
 class PostViewSet(viewsets.ModelViewSet):
@@ -14,11 +14,6 @@ class PostViewSet(viewsets.ModelViewSet):
     serializer_class = PostSerializer
     permission_classes = (IsOwnerOrReadOnly,)
     pagination_class = LimitOffsetPagination
-
-    def get_permissions(self):
-        if self.action == 'create':
-            return (IsAuthenticated(),)
-        return super().get_permissions()
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
@@ -33,11 +28,6 @@ class CommentViewSet(viewsets.ModelViewSet):
     serializer_class = CommentSerializer
     permission_classes = (IsOwnerOrReadOnly,)
 
-    def get_permissions(self):
-        if self.action == 'create':
-            return (IsAuthenticated(),)
-        return super().get_permissions()
-
     def get_queryset(self):
         post_id = self.kwargs['post_id']
         post = get_object_or_404(Post, pk=post_id)
@@ -49,21 +39,16 @@ class CommentViewSet(viewsets.ModelViewSet):
         serializer.save(author=self.request.user, post=post)
 
 
-class FollowViewSet(viewsets.ModelViewSet):
+class FollowListCreate(generics.ListCreateAPIView):
     serializer_class = FollowSerializer
     permission_classes = (IsAuthenticated,)
     filter_backends = (filters.SearchFilter,)
     search_fields = ('following__username',)
 
     def get_queryset(self):
-        user = self.request.user
-        return Follow.objects.filter(user=user)
+        return User.objects.get(
+            username=self.request.user.username,
+        ).follower.all()
 
     def perform_create(self, serializer):
-        user = self.request.user
-        following = serializer.validated_data.get('following')
-        if user.username == following.username:
-            raise serializers.ValidationError(
-                'Вы не можете подписаться на себя!'
-            )
         serializer.save(user=self.request.user)
